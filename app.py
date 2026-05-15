@@ -29,7 +29,7 @@ def index():
     if 'user_id' not in request.cookies:
         user_id = str(uuid.uuid4())
         response = make_response(render_template('index.html'))
-        response.set_cookie('user_id', user_id, max_age=31536000, secure=True, httponly=True)  # 1年有效期
+        response.set_cookie('user_id', user_id, max_age=31536000, httponly=True)  # 1年有效期，HTTP部署去掉secure=True
         return response
     return render_template('index.html')
 
