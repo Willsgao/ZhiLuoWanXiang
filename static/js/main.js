@@ -831,27 +831,44 @@ function createNetwork(data) {
 
         // ========== 右键菜单 ==========
         network.on('oncontext', function(params) {
-            params.event.preventDefault(); // 阻止浏览器默认右键菜单
+            // vis.js oncontext 不提供 event 对象，用 DOM 事件代替
+        });
 
-            if (params.nodes.length > 0) {
-                // 右键点击了节点
-                currentContext = { type: 'node', id: params.nodes[0] };
-                showContextMenu(params.event.srcEvent.clientX, params.event.srcEvent.clientY, [
-                    { label: '✏️ 重命名节点', action: 'rename' },
-                    { label: '🗑️ 删除节点', action: 'delete' }
+        // 通过 canvas 的原生 contextmenu 事件处理右键菜单
+        document.getElementById('network-container').addEventListener('contextmenu', function(evt) {
+            console.log('[右键菜单] contextmenu 触发, target:', evt.target.tagName, evt.target.id);
+            evt.preventDefault();
+            evt.stopPropagation();
+
+            // 坐标转换：vis.js 需要 canvas 容器内的相对坐标，而非视口坐标
+            var rect = network.canvas.frame.getBoundingClientRect();
+            var x = evt.clientX - rect.left;
+            var y = evt.clientY - rect.top;
+            var nodeId = network.getNodeAt({x: x, y: y});
+            var edgeId = network.getEdgeAt({x: x, y: y});
+            console.log('[右键菜单] nodeId:', nodeId, 'edgeId:', edgeId);
+
+            if (nodeId !== null && nodeId !== undefined) {
+                currentContext = { type: 'node', id: nodeId };
+                showContextMenu(evt.clientX, evt.clientY, [
+                    { label: '重命名节点', action: 'rename' },
+                    { label: '删除节点', action: 'delete' }
                 ]);
-            } else if (params.edges.length > 0) {
-                // 右键点击了连线
-                const edge = localEdges.get(params.edges[0]);
+                console.log('[右键菜单] 节点菜单已显示');
+            } else if (edgeId !== null && edgeId !== undefined) {
+                var edge = localEdges.get(edgeId);
                 currentContext = {
                     type: 'edge',
-                    id: params.edges[0],
+                    id: edgeId,
                     label: edge ? edge.label : ''
                 };
-                showContextMenu(params.event.srcEvent.clientX, params.event.srcEvent.clientY, [
-                    { label: '✏️ 编辑关系', action: 'edit' },
-                    { label: '🗑️ 删除连线', action: 'delete' }
+                showContextMenu(evt.clientX, evt.clientY, [
+                    { label: '编辑关系', action: 'edit' },
+                    { label: '删除连线', action: 'delete' }
                 ]);
+                console.log('[右键菜单] 连线菜单已显示');
+            } else {
+                hideContextMenu();
             }
         });
 
@@ -1522,14 +1539,19 @@ function createNetwork(data) {
     /** 隐藏右键菜单 */
     function hideContextMenu() {
         document.getElementById('context-menu').style.display = 'none';
-        currentContext = null;
+        // 延迟清空 currentContext，避免与菜单项 click 事件冲突
+        setTimeout(function() { currentContext = null; }, 100);
     }
 
     // ---- 右键菜单选项点击 ----
     document.getElementById('context-menu-list').addEventListener('click', function(e) {
-        const li = e.target.closest('li');
-        if (!li || !currentContext) return;
+        console.log('[右键菜单] click 事件触发, target:', e.target.tagName, e.target.textContent);
+        const li = e.target.closest ? e.target.closest('li') : null;
+        console.log('[右键菜单] li:', li ? li.textContent : 'null', 'currentContext:', currentContext);
+        if (!li) return;
+        if (!currentContext) return;
         const action = li.dataset.action;
+        console.log('[右键菜单] action:', action, 'type:', currentContext.type);
 
         if (currentContext.type === 'node') {
             if (action === 'rename') {
