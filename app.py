@@ -12,13 +12,13 @@ import logging
 app = Flask(__name__)
 
 # 确保日志目录存在
-log_dir = '/var/log/termsai'
+log_dir = 'logs'
 if not os.path.exists(log_dir):
     os.makedirs(log_dir, exist_ok=True)
 
 # 配置日志
 logging.basicConfig(
-    filename='/var/log/termsai/app.log',
+    filename='logs/app.log',
     level=logging.DEBUG,
     format='%(asctime)s %(levelname)s: %(message)s'
 )
