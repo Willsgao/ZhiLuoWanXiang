@@ -620,5 +620,42 @@ def get_graph():
         logging.error(f"获取图谱时出错: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
+@app.route('/save_graph', methods=['POST'])
+def save_graph():
+    """保存图谱编辑结果"""
+    try:
+        data = request.json
+        graph_id = data.get('graph_id')
+        concepts = data.get('concepts')
+        relationships = data.get('relationships')
+
+        if not graph_id or concepts is None or relationships is None:
+            return jsonify({'error': '缺少必要参数'}), 400
+
+        with Session() as session:
+            graph = session.query(KnowledgeGraph).get(graph_id)
+            if not graph:
+                return jsonify({'error': f'图谱ID {graph_id} 不存在'}), 404
+
+            graph.concepts = concepts
+            graph.relationships = relationships
+            session.commit()
+            logging.info(f"图谱 {graph_id} 已保存，{len(concepts)} 个节点，{len(relationships)} 条连线")
+
+            network_data = create_network_data(concepts, relationships)
+            is_person = getattr(graph, 'is_person', False)
+
+            return jsonify({
+                'status': 'success',
+                'data': {
+                    'graph_id': graph.id,
+                    'network_data': network_data,
+                    'is_person': is_person
+                }
+            })
+    except Exception as e:
+        logging.error(f"保存图谱时出错: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)

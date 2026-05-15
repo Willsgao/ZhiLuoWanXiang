@@ -9,6 +9,13 @@ let lastGeneratedTopic = null;
 let lastGeneratedCount = null;
 let customFontLoaded = false;
 
+// 图谱编辑相关全局变量
+let localNodes = null;           // vis.js DataSet引用（节点）
+let localEdges = null;           // vis.js DataSet引用（连线）
+let isGraphDirty = false;        // 是否有未保存的修改
+let currentContext = null;       // 右键菜单上下文：{ type:'node'|'edge', id:'...', label:'...' }
+let currentNetworkData = null;   // 当前图谱的完整network_data对象
+
 // 标识当前图谱是否为新增概念生成的图谱（默认 false）
 window.isNewConceptGraph = false; 
 // 用来记录新增概念场景下上一轮用于 LLM 生成的请求数据，例如：{ topic:"xxx", count:10, ... }
@@ -662,8 +669,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function createNetwork(data) {
-        const container = document.getElementById('network');
+let originalColors = {}; // 存储每个节点的原始颜色（用于右键高亮/编辑）
+
+function createNetwork(data) {
+    const container = document.getElementById('network');
         
         if (network) {
             network.destroy();
@@ -723,8 +732,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const nodes = network.body.data.nodes;
         const edges = network.body.data.edges;
+        localNodes = nodes;
+        localEdges = edges;
+        currentNetworkData = data;
         
-        const originalColors = {};
+        originalColors = {};
         data.nodes.forEach(node => {
             originalColors[node.id] = node.color.background;
         });
@@ -769,7 +781,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 });
 
-                const node = data.nodes.find(n => n.id === selectedNode);
+                var nodeData = currentNetworkData ? currentNetworkData.nodes : data.nodes;
+                var node = nodeData.find(function(n) { return n.id === selectedNode; });
                 if (node && node.explanation) {
                     infoBox.textContent = node.explanation;
                 }
@@ -815,9 +828,54 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
         });
-    }
 
-    // 更新图谱编号显示的辅助函数
+        // ========== 右键菜单 ==========
+        network.on('oncontext', function(params) {
+            params.event.preventDefault(); // 阻止浏览器默认右键菜单
+
+            if (params.nodes.length > 0) {
+                // 右键点击了节点
+                currentContext = { type: 'node', id: params.nodes[0] };
+                showContextMenu(params.event.srcEvent.clientX, params.event.srcEvent.clientY, [
+                    { label: '✏️ 重命名节点', action: 'rename' },
+                    { label: '🗑️ 删除节点', action: 'delete' }
+                ]);
+            } else if (params.edges.length > 0) {
+                // 右键点击了连线
+                const edge = localEdges.get(params.edges[0]);
+                currentContext = {
+                    type: 'edge',
+                    id: params.edges[0],
+                    label: edge ? edge.label : ''
+                };
+                showContextMenu(params.event.srcEvent.clientX, params.event.srcEvent.clientY, [
+                    { label: '✏️ 编辑关系', action: 'edit' },
+                    { label: '🗑️ 删除连线', action: 'delete' }
+                ]);
+            }
+        });
+
+        // ========== 双击编辑 ==========
+        network.on('doubleClick', function(params) {
+            if (params.nodes.length > 0) {
+                const nodeId = params.nodes[0];
+                currentContext = { type: 'node', id: nodeId };
+                document.getElementById('edit-modal-title').textContent = '重命名节点';
+                document.getElementById('edit-input').value = nodeId;
+                document.getElementById('modal-overlay-edit').style.display = 'flex';
+                document.getElementById('edit-input').select();
+            } else if (params.edges.length > 0) {
+                const edge = localEdges.get(params.edges[0]);
+                if (edge) {
+                    currentContext = { type: 'edge', id: params.edges[0], label: edge.label || '' };
+                    document.getElementById('edit-modal-title').textContent = '编辑关系描述';
+                    document.getElementById('edit-input').value = edge.label || '';
+                    document.getElementById('modal-overlay-edit').style.display = 'flex';
+                    document.getElementById('edit-input').select();
+                }
+            }
+        });
+    } // end of createNetwork
     function updateGraphIdDisplay(id) {
         const graphIdElem = document.getElementById('graph-id-value');
         if (graphIdElem) {
@@ -1134,6 +1192,69 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // ---- 保存修改按钮 ----
+    document.getElementById('save-graph-btn').addEventListener('click', async function() {
+        if (!localNodes || !localEdges || !currentGraphId) {
+            alert('没有可保存的修改');
+            return;
+        }
+
+        // 从 vis.js DataSet 重建 concepts 和 relationships
+        var allNodes = localNodes.get();
+        var allEdges = localEdges.get();
+
+        var concepts = {};
+        allNodes.forEach(function(node) {
+            concepts[node.id] = node.explanation || '';
+        });
+
+        var relationships = [];
+        allEdges.forEach(function(edge) {
+            relationships.push([edge.from, edge.to, edge.label || '']);
+        });
+
+        try {
+            var saveBtn = document.getElementById('save-graph-btn');
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span class="button-text">保存中...</span>';
+
+            var response = await fetch('/save_graph', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    graph_id: currentGraphId,
+                    concepts: concepts,
+                    relationships: relationships
+                })
+            });
+            var result = await response.json();
+
+            if (result.error) {
+                throw new Error(result.error);
+            }
+
+            if (result.status === 'success' && result.data) {
+                isGraphDirty = false;
+                saveBtn.style.display = 'none';
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i><span class="button-text">保存修改</span>';
+
+                // 用后端返回的完整 network_data 重新渲染
+                createNetwork(result.data.network_data);
+                infoBox.textContent = '修改已保存';
+                setTimeout(function() {
+                    infoBox.textContent = '点击节点查看详细信息，图谱可缩放及下载';
+                }, 2000);
+            }
+        } catch (error) {
+            console.error('保存失败:', error);
+            alert('保存失败: ' + error.message);
+            var saveBtn = document.getElementById('save-graph-btn');
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fas fa-save"></i><span class="button-text">保存修改</span>';
+        }
+    });
+
     // 新增搜寻图谱相关变量和事件监听
     const searchGraphBtn = document.getElementById('search-graph-btn');
     const modalSearchOverlay = document.getElementById('modal-overlay-search');
@@ -1377,7 +1498,204 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
-});
+
+    // ==========================================
+    //  右键菜单 + 编辑弹窗 + 编辑操作函数
+    // ==========================================
+
+    /** 显示自定义右键菜单 */
+    function showContextMenu(x, y, items) {
+        const menu = document.getElementById('context-menu');
+        const list = document.getElementById('context-menu-list');
+        list.innerHTML = '';
+        items.forEach(function(item) {
+            const li = document.createElement('li');
+            li.textContent = item.label;
+            li.dataset.action = item.action;
+            list.appendChild(li);
+        });
+        menu.style.display = 'block';
+        menu.style.left = x + 'px';
+        menu.style.top = y + 'px';
+    }
+
+    /** 隐藏右键菜单 */
+    function hideContextMenu() {
+        document.getElementById('context-menu').style.display = 'none';
+        currentContext = null;
+    }
+
+    // ---- 右键菜单选项点击 ----
+    document.getElementById('context-menu-list').addEventListener('click', function(e) {
+        const li = e.target.closest('li');
+        if (!li || !currentContext) return;
+        const action = li.dataset.action;
+
+        if (currentContext.type === 'node') {
+            if (action === 'rename') {
+                document.getElementById('edit-modal-title').textContent = '重命名节点';
+                document.getElementById('edit-input').value = currentContext.id;
+                document.getElementById('modal-overlay-edit').style.display = 'flex';
+                document.getElementById('edit-input').select();
+            } else if (action === 'delete') {
+                if (confirm('确定要删除节点"' + currentContext.id + '"吗？\n关联的连线也将被删除。')) {
+                    deleteNode(currentContext.id);
+                }
+            }
+        } else if (currentContext.type === 'edge') {
+            if (action === 'edit') {
+                document.getElementById('edit-modal-title').textContent = '编辑关系描述';
+                document.getElementById('edit-input').value = currentContext.label || '';
+                document.getElementById('modal-overlay-edit').style.display = 'flex';
+                document.getElementById('edit-input').select();
+            } else if (action === 'delete') {
+                if (confirm('确定要删除这条连线吗？')) {
+                    deleteEdge(currentContext.id);
+                }
+            }
+        }
+        hideContextMenu();
+    });
+
+    // ---- 点击页面空白处关闭右键菜单 ----
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#context-menu')) {
+            hideContextMenu();
+        }
+    });
+
+    // ---- 编辑弹窗：确认 ----
+    document.getElementById('confirm-edit').addEventListener('click', function() {
+        const newValue = document.getElementById('edit-input').value.trim();
+        if (!newValue) { alert('内容不能为空'); return; }
+
+        const modalTitle = document.getElementById('edit-modal-title').textContent;
+        if (modalTitle === '重命名节点' && currentContext) {
+            renameNode(currentContext.id, newValue);
+        } else if (modalTitle === '编辑关系描述' && currentContext) {
+            editEdgeLabel(currentContext.id, newValue);
+        }
+        document.getElementById('modal-overlay-edit').style.display = 'none';
+    });
+
+    // ---- 编辑弹窗：取消 ----
+    document.getElementById('cancel-edit').addEventListener('click', function() {
+        document.getElementById('modal-overlay-edit').style.display = 'none';
+    });
+
+    // ---- 编辑弹窗：点击遮罩层关闭 ----
+    document.getElementById('modal-overlay-edit').addEventListener('click', function(e) {
+        if (e.target === this) {
+            this.style.display = 'none';
+        }
+    });
+
+    // ==========================================
+    //  图谱编辑操作函数
+    // ==========================================
+
+    /** 重命名节点 */
+    function renameNode(oldId, newId) {
+        if (oldId === newId || !localNodes) return;
+        const oldNode = localNodes.get(oldId);
+        if (!oldNode) return;
+
+        // 1. 创建新节点（复制原节点属性）
+        localNodes.add({
+            id: newId,
+            label: oldNode.label,
+            color: oldNode.color,
+            explanation: oldNode.explanation
+        });
+
+        // 2. 更新所有关联连线的 from / to
+        const relatedEdges = localEdges.get({
+            filter: function(edge) {
+                return edge.from === oldId || edge.to === oldId;
+            }
+        });
+        relatedEdges.forEach(function(edge) {
+            localEdges.update({
+                id: edge.id,
+                from: edge.from === oldId ? newId : edge.from,
+                to: edge.to === oldId ? newId : edge.to
+            });
+        });
+
+        // 3. 删除旧节点
+        localNodes.remove(oldId);
+
+        // 4. 更新 originalColors
+        if (originalColors[oldId] !== undefined) {
+            originalColors[newId] = originalColors[oldId];
+            delete originalColors[oldId];
+        }
+
+        // 5. 更新 currentNetworkData.nodes
+        if (currentNetworkData) {
+            var idx = currentNetworkData.nodes.findIndex(function(n) { return n.id === oldId; });
+            if (idx !== -1) {
+                currentNetworkData.nodes[idx].id = newId;
+            }
+        }
+
+        markDirty();
+    }
+
+    /** 删除节点及其关联连线 */
+    function deleteNode(nodeId) {
+        if (!localNodes) return;
+
+        // 1. 删除所有关联连线
+        var edgesToRemove = localEdges.get({
+            filter: function(edge) {
+                return edge.from === nodeId || edge.to === nodeId;
+            }
+        });
+        edgesToRemove.forEach(function(edge) {
+            localEdges.remove(edge.id);
+        });
+
+        // 2. 删除节点
+        localNodes.remove(nodeId);
+
+        // 3. 更新 originalColors 和 currentNetworkData
+        delete originalColors[nodeId];
+        if (currentNetworkData) {
+            currentNetworkData.nodes = currentNetworkData.nodes.filter(function(n) { return n.id !== nodeId; });
+        }
+
+        markDirty();
+    }
+
+    /** 编辑关系标签 */
+    function editEdgeLabel(edgeId, newLabel) {
+        if (!localEdges) return;
+        localEdges.update({ id: edgeId, label: newLabel });
+        if (currentNetworkData) {
+            var edge = currentNetworkData.edges.find(function(e) { return e.id === edgeId; });
+            if (edge) edge.label = newLabel;
+        }
+        markDirty();
+    }
+
+    /** 删除连线 */
+    function deleteEdge(edgeId) {
+        if (!localEdges) return;
+        localEdges.remove(edgeId);
+        if (currentNetworkData) {
+            currentNetworkData.edges = currentNetworkData.edges.filter(function(e) { return e.id !== edgeId; });
+        }
+        markDirty();
+    }
+
+    /** 标记图谱已修改，显示保存按钮 */
+    function markDirty() {
+        isGraphDirty = true;
+        document.getElementById('save-graph-btn').style.display = 'block';
+    }
+
+}); // end of DOMContentLoaded
 
 document.getElementById('download-btn').addEventListener('click', async function() {
     if (!network) return;

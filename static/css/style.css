@@ -885,6 +885,7 @@ button:disabled {
 /* 统一按钮基础样式 */
 #download-btn,
 #search-graph-btn,
+#save-graph-btn,
 #add-concept-btn,
 #dislike-btn,
 #like-btn {
@@ -917,16 +918,20 @@ button:disabled {
     top: 56px; /* 10px + 36px + 10px */
 }
 
-#add-concept-btn {
+#save-graph-btn {
     top: 102px; /* 56px + 36px + 10px */
 }
 
-#dislike-btn {
+#add-concept-btn {
     top: 148px; /* 102px + 36px + 10px */
 }
 
-#like-btn {
+#dislike-btn {
     top: 194px; /* 148px + 36px + 10px */
+}
+
+#like-btn {
+    top: 240px; /* 194px + 36px + 10px */
 }
 
 /* 移除 feedback-buttons 的定位 */
@@ -938,6 +943,7 @@ button:disabled {
 @media (max-width: 768px) {
     #download-btn,
     #search-graph-btn,
+    #save-graph-btn,
     #add-concept-btn,
     #dislike-btn,
     #like-btn {
@@ -1001,6 +1007,7 @@ input, textarea, #network, button {
 
 /* 为其他按钮添加 hover 效果 */
 #search-graph-btn:hover,
+#save-graph-btn:hover,
 #add-concept-btn:hover,
 #dislike-btn:hover,
 #like-btn:hover {
@@ -1042,5 +1049,63 @@ input, textarea, #network, button {
 
 .ai-disclaimer a:hover {
     text-decoration: underline;
-} 
+}
+
+/* ========== 右键菜单样式 ========== */
+.context-menu {
+    position: fixed;
+    z-index: 9999;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    min-width: 140px;
+    padding: 4px 0;
+}
+
+.context-menu ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.context-menu li {
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #333;
+    white-space: nowrap;
+}
+
+.context-menu li:hover {
+    background-color: #f0f7f6;
+    color: #00a99d;
+}
+
+.context-menu .ctx-separator {
+    height: 1px;
+    background: #eee;
+    padding: 0;
+    margin: 4px 0;
+    cursor: default;
+}
+
+/* ========== 编辑弹窗样式 ========== */
+#modal-overlay-edit .modal-content {
+    min-width: 320px;
+}
+
+#edit-input {
+    flex: 1;
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    outline: none;
+}
+
+#edit-input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(0, 169, 157, 0.15);
+}
 
