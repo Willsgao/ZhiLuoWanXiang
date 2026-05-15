@@ -4,7 +4,7 @@ from openai import OpenAI
 import os
 
 def client(model):
-    if model in ["deepseek-reasoner","deepseek-chat"]:
+    if model in ["deepseek-reasoner","deepseek-chat","deepseek-v4-flash"]:
         return OpenAI(
             api_key=os.environ.get("deepseek_API_KEY"),
             base_url="https://api.deepseek.com"
