@@ -107,7 +107,6 @@ MIT
 
 ZhiLuoWanXiang is an AI-powered knowledge graph generation tool that automatically creates structured knowledge graphs by simply inputting a learning topic and the desired number of concepts. This tool helps users quickly organize key concepts and their relationships in a specific field, making it an excellent assistant for learning new topics, preparing lessons, and conducting research.
 
-Demo: [https://termsai.shuaifox.com/](https://termsai.shuaifox.com/)（原 TermsAI，已更名知罗万象）
 
 ## Key Features
 
