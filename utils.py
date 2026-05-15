@@ -223,21 +223,28 @@ def generate_concepts(topic: str, count: int = 10, is_person: bool = False, stre
             "content": CONCEPT_PROMPT_TEMPLATE.format(topic=topic, count=count)
         }]
     
-    if stream:
-        accumulated_text = ""  # 用于累积文本进行过滤检查
-        stream_gen = call_llm_api(messages, f"生成主体 '{topic}' 相关的节点", stream=True)
-        for chunk in stream_gen:
-            accumulated_text += chunk
-            # 检查每个新chunk是否包含过滤词
-            if check_content_filter(chunk) or check_content_filter(accumulated_text):
-                yield "[[CONTENT_FILTERED]]"
-                return
-            yield chunk
+        if stream:
+            accumulated_text = ""  # 用于累积文本进行过滤检查
+            print(f"\n=== 开始流式生成概念({topic}) ===")
+            stream_gen = call_llm_api(messages, f"生成主体 '{topic}' 相关的节点", stream=True)
+            for chunk in stream_gen:
+                if chunk:
+                    print(chunk, end="", flush=True)
+                accumulated_text += chunk
+                # 检查每个新chunk是否包含过滤词
+                if check_content_filter(chunk) or check_content_filter(accumulated_text):
+                    yield "[[CONTENT_FILTERED]]"
+                    return
+                yield chunk
+            print("\n=== 概念生成完成 ===")
     else:
         # 非流式模式下，分块接收并检查内容
+        print(f"\n=== 开始生成概念(非流式)({topic}) ===")
         accumulated_text = ""
         stream_gen = call_llm_api(messages, f"生成主体 '{topic}' 相关的节点", stream=True)
         for chunk in stream_gen:
+            if chunk:
+                print(chunk, end="", flush=True)
             # 检查每个新chunk是否包含过滤词
             if check_content_filter(chunk):
                 raise ValueError("抱歉，这不是我擅长的主题，问我点别的吧！")
@@ -245,6 +252,7 @@ def generate_concepts(topic: str, count: int = 10, is_person: bool = False, stre
             # 检查累积的文本是否包含过滤词
             if check_content_filter(accumulated_text):
                 raise ValueError("抱歉，这不是我擅长的主题，问我点别的吧！")
+        print("\n=== 概念生成完成 ===")
         
         # 只有在确认没有过滤词后才解析JSON
         return parse_json_response(
@@ -275,6 +283,8 @@ def generate_relationships(concepts: dict, is_person: bool = False) -> list:
             )
         }]
         
+        print(f"\n=== 开始生成关系(共{len(concepts)}个节点) ===")
+        
         response_text = call_llm_api(
             messages=messages,
             context="生成概念关系"
@@ -282,6 +292,7 @@ def generate_relationships(concepts: dict, is_person: bool = False) -> list:
         
         # 打印原始响应，用于调试
         print(f"关系生成原始响应: {response_text}")
+        print("=== 关系生成完成 ===")
         
         # 解析 JSON 响应并提取 relations 数组
         response_data = parse_json_response(
@@ -470,11 +481,14 @@ def generate_new_concept_detail(new_concept_input: str, is_person: bool = False)
                 )
             }]
         
+        print(f"\n=== 生成新概念详情({new_concept_input}) ===")
         response_text = call_llm_api(
             messages,
             context=f"生成新概念 '{new_concept_input}' 的描述",
             stream=False
         )
+        print(f"新概念详情结果: {response_text}")
+        print("=== 新概念详情生成完成 ===")
         result = parse_json_response(
             response_text,
             error_context=f"处理新增概念 '{new_concept_input}' 的生成结果时"
