@@ -223,7 +223,7 @@ def generate_concepts(topic: str, count: int = 10, is_person: bool = False, stre
             "content": CONCEPT_PROMPT_TEMPLATE.format(topic=topic, count=count)
         }]
     
-        if stream:
+    if stream:
             accumulated_text = ""  # 用于累积文本进行过滤检查
             print(f"\n=== 开始流式生成概念({topic}) ===")
             stream_gen = call_llm_api(messages, f"生成主体 '{topic}' 相关的节点", stream=True)
